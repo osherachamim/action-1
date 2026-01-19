@@ -15,5 +15,5 @@ jobs:
 
       - name: Executing Shell Script
         run: |
-          chmox +x ascii-script.sh
+          chmod +x ascii-script.sh
           ./ascii-script.sh
