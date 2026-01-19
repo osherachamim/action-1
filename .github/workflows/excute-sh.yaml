@@ -9,7 +9,7 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
         
-      - name: List and Read file
+      - name: List and Read files
         run: ls -ltra
 
 
