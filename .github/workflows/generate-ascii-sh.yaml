@@ -1,4 +1,4 @@
-name: Generate ASCII Artwork Script
+name: Generate Run Ascii Script
 
 on: push
 
