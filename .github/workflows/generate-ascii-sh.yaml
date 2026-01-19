@@ -14,5 +14,6 @@ jobs:
 
 
       - name: Executing Shell Script
-        run: ./ascii-script.sh
-
+        run: |
+          chmox +x ascii-script.sh
+          ./ascii-script.sh
