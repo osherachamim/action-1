@@ -6,6 +6,7 @@ on:
 
 jobs:
   deploy:
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       max-parallel: 2
