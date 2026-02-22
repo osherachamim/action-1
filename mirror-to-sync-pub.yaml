@@ -1,0 +1,64 @@
+name: Sync EMU -> Public (main only, no workflows)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate installation token (EMU source)
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: cato-networks-CTRL
+          repositories: sync-mirror-poc
+
+      - name: Clone source (main)
+        run: |
+          set -euo pipefail
+          SRC_URL="https://x-access-token:${{ steps.app_token.outputs.token }}@github.com/${{ github.repository }}.git"
+          git clone --no-tags --single-branch --branch main "$SRC_URL" repo
+          cd repo
+          git rev-parse --short HEAD
+
+      - name: Remove workflows from history (rewrite)
+        run: |
+          set -euo pipefail
+          cd repo
+
+          # Rewrite history to remove .github/workflows from ALL commits
+          git filter-branch -f --prune-empty --index-filter \
+            "git rm -r --cached --ignore-unmatch .github/workflows" \
+            -- --all
+
+          # Cleanup after rewrite
+          rm -rf .git/refs/original
+          git reflog expire --expire=now --all
+          git gc --prune=now --aggressive
+
+          echo "After rewrite:"
+          git log -1 --name-only --pretty=oneline | head -n 50
+
+      - name: Push main to Public using PAT
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd repo
+
+          TARGET_REPO="Cato-CTRL/sync-emu-prod"
+          DEST_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/${TARGET_REPO}.git"
+
+          git remote remove origin || true
+          git remote add public "$DEST_URL"
+
+          # Force-update main only (history rewritten)
+          git push public HEAD:main --force
+          echo "Sync main completed"
