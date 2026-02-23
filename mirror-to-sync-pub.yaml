@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '0 1 * * *'
   workflow_dispatch:
-  
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -18,7 +20,39 @@ jobs:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: cato-networks-CTRL
-          repositories: sync-mirror-poc
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Ensure public repo exists
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PUBLIC_ORG: Cato-CTRL
+        run: |
+          set -euo pipefail
+
+          # Check if repo already exists
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${PUBLIC_REPO_TOKEN}" \
+            "https://api.github.com/repos/${PUBLIC_ORG}/${REPO_NAME}")
+
+          if [ "$STATUS" = "200" ]; then
+            echo "Public repo ${PUBLIC_ORG}/${REPO_NAME} already exists, skipping creation."
+          else
+            echo "Creating public repo ${PUBLIC_ORG}/${REPO_NAME}..."
+            curl -sf -X POST \
+              -H "Authorization: token ${PUBLIC_REPO_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/${PUBLIC_ORG}/repos" \
+              -d "{
+                \"name\": \"${REPO_NAME}\",
+                \"visibility\": \"public\",
+                \"description\": \"Public mirror of ${REPO_NAME}\",
+                \"has_issues\": false,
+                \"has_projects\": false,
+                \"has_wiki\": false
+              }"
+            echo "Created successfully."
+          fi
 
       - name: Clone source (main)
         run: |
@@ -32,33 +66,23 @@ jobs:
         run: |
           set -euo pipefail
           cd repo
-
-          # Rewrite history to remove .github/workflows from ALL commits
           git filter-branch -f --prune-empty --index-filter \
             "git rm -r --cached --ignore-unmatch .github/workflows" \
             -- --all
-
-          # Cleanup after rewrite
           rm -rf .git/refs/original
           git reflog expire --expire=now --all
           git gc --prune=now --aggressive
 
-          echo "After rewrite:"
-          git log -1 --name-only --pretty=oneline | head -n 50
-
-      - name: Push main to Public using PAT
+      - name: Push main to public
         env:
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PUBLIC_ORG: Cato-CTRL
         run: |
           set -euo pipefail
           cd repo
-
-          TARGET_REPO="Cato-CTRL/sync-emu-prod"
-          DEST_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/${TARGET_REPO}.git"
-
+          DEST_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/${PUBLIC_ORG}/${REPO_NAME}.git"
           git remote remove origin || true
           git remote add public "$DEST_URL"
-
-          # Force-update main only (history rewritten)
           git push public HEAD:main --force
-          echo "Sync main completed"
+          echo "Sync to ${PUBLIC_ORG}/${REPO_NAME} completed"
